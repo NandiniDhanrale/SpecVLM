@@ -1,0 +1,61 @@
+# =============================================================================
+# SpecVLM — CUDA-Optimized Docker Image
+# =============================================================================
+# This Dockerfile builds a custom CUDA-optimized image with:
+# - FlashAttention-2 pre-compiled
+# - vLLM with CUDA graphs
+# - SGLang with RadixAttention
+# - PyTorch with CUDA 12.4
+#
+# This is the image to use for PRODUCTION deployment on A100/H100 GPUs.
+#
+# Build:
+#   docker build -t specvlm:cuda -f docker/Dockerfile.cuda .
+#
+# Run with tensor parallelism:
+#   docker run --gpus all -e CUDA_VISIBLE_DEVICES=0,1 specvlm:cuda
+#     start --model Qwen/Qwen2-VL-7B --tensor-parallel-size 2
+
+FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
+
+ENV PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:${PATH} \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+
+# Install system deps including CUDA dev tools
+RUN apt-get update && apt-get install -y \
+    python3.11 python3.11-dev python3-pip \
+    git curl build-essential ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# Install PyTorch with CUDA 12.4
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# Install FlashAttention-2 (for faster attention)
+RUN pip install flash-attn --no-build-isolation
+
+# Install vLLM from source (for latest CUDA graph support)
+RUN git clone https://github.com/vllm-project/vllm.git && \
+    cd vllm && \
+    pip install -e .
+
+# Install SGLang with RadixAttention
+RUN pip install sglang[all]
+
+# Install SpecVLM
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
+
+COPY . /app
+WORKDIR /app
+
+RUN pip install -e .
+
+EXPOSE 8000 8001
+
+CMD ["uvicorn", "specvlm.serving.api:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,74 @@
+# =============================================================================
+# SpecVLM - Model Configuration
+# =============================================================================
+# This file defines model pairings for speculative decoding.
+# Each entry pairs a draft model (small, fast) with a target model (large, accurate).
+
+model:
+  # Default model config
+  model_id: "Qwen/Qwen2-VL-7B-Instruct"
+  model_type: "target"
+  dtype: "bfloat16"
+  max_model_len: 8192
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.90
+  trust_remote_code: true
+  image_size: 336
+  image_token_limit: 576
+  vision_feature_layer: -2
+  speculation_length: 5
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+
+inference:
+  engine: "vllm"
+  enforce_eager: false
+  max_num_batched_tokens: 8192
+  max_num_seqs: 256
+  scheduling_policy: "cache_aware"
+  use_speculative_decoding: false
+  acceptance_fn: "strict"
+  enable_prefix_caching: true
+  enable_profiling: false
+
+serving:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1
+  max_concurrent_requests: 64
+  streaming: true
+  rate_limit_rpm: 100
+
+distributed:
+  backend: "none"
+  num_workers: 1
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+
+# Model registry for different VLM architectures
+model_registry:
+  draft_candidates:
+    - id: "Qwen/Qwen2-VL-2B-Instruct"
+      type: "draft"
+      memory_gb: 4.0
+      speed_tokens_per_sec: 120
+    - id: "HuggingFaceTB/SmolVLM-256M-Instruct"
+      type: "draft"
+      memory_gb: 1.5
+      speed_tokens_per_sec: 200
+
+  target_candidates:
+    - id: "Qwen/Qwen2-VL-7B-Instruct"
+      type: "target"
+      memory_gb: 16.0
+      speed_tokens_per_sec: 30
+    - id: "liuhaotian/llava-v1.5-7b"
+      type: "target"
+      memory_gb: 14.0
+      speed_tokens_per_sec: 25
+    - id: "Qwen/Qwen2-VL-72B-Instruct"
+      type: "target"
+      memory_gb: 140.0
+      speed_tokens_per_sec: 5
+      tensor_parallel_size: 4

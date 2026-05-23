@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.env/
+specvlm-env/
+
+# Model cache
+models/*/
+!models/README.md
+
+# Data
+data/images/*
+!data/images/.gitkeep
+
+# Results
+results/
+
+# Profiling traces
+profiles/
+*.json.trace
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log

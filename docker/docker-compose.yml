@@ -1,0 +1,151 @@
+# =============================================================================
+# SpecVLM — Docker Compose Production Stack
+# =============================================================================
+#
+# Full production stack with:
+# - SpecVLM inference server (with GPU support)
+# - Redis for request queuing and cache
+# - Prometheus for metrics collection
+# - Grafana for dashboard visualization
+#
+# Usage:
+#   docker compose up -d
+#
+# For GPU support, ensure nvidia-docker is installed:
+#   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+
+version: "3.9"
+
+services:
+  # ===========================================================================
+  # SpecVLM Inference Server
+  # ===========================================================================
+  specvlm:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: specvlm:latest
+    container_name: specvlm-server
+    runtime: nvidia  # Required for GPU access
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - SPECVLM_LOG_LEVEL=INFO
+      - SPECVLM__INFERENCE__ENGINE=vllm
+      - SPECVLM__INFERENCE__USE_SPECULATIVE_DECODING=false
+      - SPECVLM__INFERENCE__TARGET_MODEL_ID=Qwen/Qwen2-VL-7B-Instruct
+      - SPECVLM__INFERENCE__DRAFT_MODEL_ID=Qwen/Qwen2-VL-2B-Instruct
+      - SPECVLM__SERVING__HOST=0.0.0.0
+      - SPECVLM__SERVING__PORT=8000
+      - SPECVLM__SERVING__WORKERS=1
+      - SPECVLM__DISTRIBUTED__REDIS_HOST=redis
+      - SPECVLM__DISTRIBUTED__REDIS_PORT=6379
+    ports:
+      - "8000:8000"  # Inference API
+      - "8001:8001"  # Prometheus metrics
+    volumes:
+      - model_cache:/root/.cache/huggingface  # Persist model downloads
+      - ./data/images:/app/data/images:ro  # Read-only image access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # Model loading can take time
+
+  # ===========================================================================
+  # Redis — Request Queue & KV Cache Store
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: specvlm-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ===========================================================================
+  # Prometheus — Metrics Collection
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: specvlm-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=30d"
+    depends_on:
+      - specvlm
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Grafana — Visualization Dashboards
+  # ===========================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: specvlm-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=specvlm
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ===========================================================================
+  # (Optional) Locust — Load Testing
+  # ===========================================================================
+  locust:
+    image: locustio/locust:latest
+    container_name: specvlm-locust
+    ports:
+      - "8089:8089"  # Web UI
+    volumes:
+      - ../benchmarks/locustfile.py:/mnt/locust/locustfile.py:ro
+    command:
+      - "--host=http://specvlm:8000"
+      - "--web-host=0.0.0.0"
+      - "--headless"
+      - "--users=10"
+      - "--spawn-rate=1"
+      - "--run-time=5m"
+    depends_on:
+      - specvlm
+    profiles:
+      - loadtest  # Only start with: docker compose --profile loadtest up
+
+
+volumes:
+  model_cache:
+  redis_data:
+  prometheus_data:
+  grafana_data:

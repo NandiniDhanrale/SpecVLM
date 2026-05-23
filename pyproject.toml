@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel>=0.44.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "specvlm"
+version = "0.1.0"
+description = "Production-grade speculative decoding system for Vision-Language Models"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "SpecVLM Engineering"},
+]
+
+dependencies = [
+    "torch>=2.4.0",
+    "transformers>=4.44.0",
+    "vllm>=0.6.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "ray[default]>=2.34.0",
+    "pillow>=10.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "black>=24.8.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+]
+benchmark = [
+    "locust>=2.31.0",
+    "matplotlib>=3.9.0",
+    "seaborn>=0.13.0",
+]
+monitoring = [
+    "prometheus-client>=0.20.0",
+    "prometheus-fastapi-instrumentator>=7.0.0",
+    "pynvml>=11.5.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["specvlm*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+ignore_missing_imports = true
