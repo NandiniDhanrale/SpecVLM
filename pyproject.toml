@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=75.0", "wheel>=0.44.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "specvlm"
@@ -43,6 +43,10 @@ monitoring = [
 
 [tool.setuptools.packages.find]
 include = ["specvlm*"]
+where = ["."]
+
+[tool.setuptools.package-data]
+specvlm = ["config/*.yaml"]
 
 [tool.black]
 line-length = 100

@@ -18,7 +18,7 @@ from pydantic_settings import BaseSettings
 class ModelConfig(BaseModel):
     """Configuration for a single VLM model."""
 
-    model_id: str = Field(description="HuggingFace model ID or local path")
+    model_id: str = Field(default="Qwen/Qwen2-VL-7B-Instruct", description="HuggingFace model ID or local path")
     model_type: Literal["draft", "target"] = "target"
     dtype: str = "bfloat16"
     max_model_len: int = 8192

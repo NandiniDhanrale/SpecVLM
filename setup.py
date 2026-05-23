@@ -5,7 +5,8 @@ setup(
     name="specvlm",
     version="0.1.0",
     description="Production-grade speculative decoding system for Vision-Language Models",
-    packages=find_packages(),
+    packages=find_packages(where="."),
+    package_dir={"": "."},
     python_requires=">=3.10",
     install_requires=[
         "torch>=2.4.0",
