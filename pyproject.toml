@@ -1,0 +1,20 @@
+[project]
+name = "specvlm"
+version = "0.1.0"
+description = "SpecVLM full-stack streaming demo (FastAPI + WebSocket + Next.js)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110",
+  "pydantic>=2.6",
+  "uvicorn[standard]>=0.27",
+]
+
+[project.optional-dependencies]
+vllm = [
+  "vllm>=0.4.0",
+]
+
+[tool.uvicorn]
+factory = false
+
