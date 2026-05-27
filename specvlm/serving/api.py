@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .engine import get_engine
 from .schemas import GenerateIn, WsDoneOut, WsErrorOut, WsTokenOut
@@ -20,9 +21,46 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+async def root() -> dict[str, Any]:
+    return {
+        "service": "SpecVLM",
+        "version": "0.1.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "generate_http": "/generate",
+            "generate_ws": "/ws/generate",
+            "docs": "/docs",
+        },
+    }
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/generate")
+async def generate_http(req: GenerateIn) -> JSONResponse:
+    """HTTP streaming endpoint — returns the full generation result."""
+    engine = get_engine()
+    full_text = ""
+    total_accepted = 0
+    total_proposed = 0
+    async for ev in engine.stream(req):
+        full_text = ev.text
+        total_accepted = ev.metrics.accepted_draft_tokens
+        total_proposed = ev.metrics.proposed_draft_tokens
+
+    return JSONResponse({
+        "text": full_text,
+        "metrics": {
+            "accepted_draft_tokens": total_accepted,
+            "proposed_draft_tokens": total_proposed,
+            "acceptance_rate": total_accepted / total_proposed if total_proposed else 0.0,
+        },
+    })
 
 
 @app.websocket("/ws/generate")
