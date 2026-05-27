@@ -1,0 +1,3 @@
+# Vercel reads this file to install Python dependencies automatically.
+fastapi>=0.110
+pydantic>=2.6
