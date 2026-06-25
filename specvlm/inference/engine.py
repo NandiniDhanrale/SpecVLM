@@ -42,6 +42,21 @@ class SpecInferenceEngine:
         )
 
         self.visual_embedding_cache: dict[str, torch.Tensor] = {}
+        self._encoder_on_gpu: bool = visual_encoder is not None
+
+    def _ensure_encoder_on_gpu(self) -> None:
+        if self.visual_encoder is None or self._encoder_on_gpu:
+            return
+        self.visual_encoder = self.visual_encoder.to(self.device)
+        self._encoder_on_gpu = True
+
+    @torch.inference_mode()
+    def _offload_encoder(self) -> None:
+        if self.visual_encoder is None or not self._encoder_on_gpu:
+            return
+        self.visual_encoder = self.visual_encoder.cpu()
+        torch.cuda.empty_cache()
+        self._encoder_on_gpu = False
 
     @staticmethod
     def _num_layers(model: torch.nn.Module) -> int:
@@ -71,7 +86,10 @@ class SpecInferenceEngine:
         if self.visual_encoder is None:
             raise RuntimeError("No visual encoder available")
 
+        self._ensure_encoder_on_gpu()
         embeds = self.visual_encoder(image.to(self.device))
+        self._offload_encoder()
+
         self.visual_embedding_cache[image_id] = embeds.cpu()
         return embeds
 
