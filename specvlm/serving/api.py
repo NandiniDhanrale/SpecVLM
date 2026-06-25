@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, HTTPException
+from fastapi import FastAPI, WebSocket, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .engine import get_engine
 from .schemas import GenerateIn, WsDoneOut, WsErrorOut, WsTokenOut
@@ -31,6 +31,7 @@ async def root() -> dict[str, Any]:
             "health": "/health",
             "generate_http": "/generate",
             "generate_ws": "/ws/generate",
+            "generate_sse": "/api/generate/stream",
             "docs": "/docs",
         },
     }
@@ -61,6 +62,29 @@ async def generate_http(req: GenerateIn) -> JSONResponse:
             "acceptance_rate": total_accepted / total_proposed if total_proposed else 0.0,
         },
     })
+
+
+@app.get("/api/generate/stream")
+async def generate_stream_sse(prompt: str = "", max_tokens: int = 500, temperature: float = 0.8, top_p: float = 0.95):
+    """SSE streaming endpoint for Vercel (Server-Sent Events)."""
+    req = GenerateIn(
+        prompt=prompt,
+        sampling_params={"max_tokens": max_tokens, "temperature": temperature, "top_p": top_p},
+    )
+    engine = get_engine()
+
+    async def event_stream():
+        async for ev in engine.stream(req):
+            data = json.dumps({
+                "type": "token",
+                "delta": ev.delta,
+                "text": ev.text,
+                "metrics": ev.metrics.model_dump(),
+            })
+            yield f"data: {data}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.websocket("/ws/generate")

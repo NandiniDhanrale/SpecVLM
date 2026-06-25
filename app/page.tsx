@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -22,6 +22,8 @@ type Metrics = {
 
 type MetricPoint = Metrics & { i: number };
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
 export default function Page() {
   const [prompt, setPrompt] = useState("Describe what you see in the image and report speculative decoding metrics.");
   const [status, setStatus] = useState<"idle" | "streaming" | "done" | "error">("idle");
@@ -29,7 +31,7 @@ export default function Page() {
   const [output, setOutput] = useState("");
   const outputRef = useRef("");
   const rafRef = useRef<number | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const [series, setSeries] = useState<MetricPoint[]>([]);
   const pointIndexRef = useRef(0);
@@ -45,12 +47,12 @@ export default function Page() {
   }
 
   function stop() {
-    wsRef.current?.close();
-    wsRef.current = null;
+    abortRef.current?.abort();
+    abortRef.current = null;
     setStatus("idle");
   }
 
-  function start() {
+  async function start() {
     setError(null);
     setStatus("streaming");
     setSeries([]);
@@ -58,44 +60,59 @@ export default function Page() {
     outputRef.current = "";
     setOutput("");
 
-    const ws = new WebSocket("ws://localhost:8000/ws/generate");
-    wsRef.current = ws;
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    ws.onopen = () => {
-      ws.send(
-        JSON.stringify({
-          prompt,
-          sampling_params: { max_tokens: 500, temperature: 0.8, top_p: 0.95 }
-        })
-      );
-    };
+    const params = new URLSearchParams({
+      prompt,
+      max_tokens: "500",
+      temperature: "0.8",
+      top_p: "0.95",
+    });
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data) as any;
-      if (data.type === "token") {
-        outputRef.current += data.delta ?? data.text ?? "";
-        flushOutput();
-        const m = data.metrics as Metrics;
-        const i = pointIndexRef.current++;
-        setSeries((prev) => [...prev, { ...m, i }]);
-      } else if (data.type === "done") {
-        setStatus("done");
-        ws.close();
-      } else if (data.type === "error") {
-        setStatus("error");
-        setError(data.message ?? "Unknown error");
-        ws.close();
+    try {
+      const res = await fetch(`${API_BASE}/api/generate/stream?${params}`, {
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
       }
-    };
 
-    ws.onerror = () => {
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = JSON.parse(line.slice(6));
+
+          if (data.type === "token") {
+            outputRef.current += data.delta ?? data.text ?? "";
+            flushOutput();
+            const m = data.metrics as Metrics;
+            const i = pointIndexRef.current++;
+            setSeries((prev) => [...prev, { ...m, i }]);
+          } else if (data.type === "done") {
+            setStatus("done");
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name === "AbortError") return;
       setStatus("error");
-      setError("WebSocket error. Is the backend running on :8000?");
-    };
-
-    ws.onclose = () => {
-      wsRef.current = null;
-    };
+      setError(err.message ?? "Connection failed");
+    }
   }
 
   return (
@@ -105,7 +122,7 @@ export default function Page() {
           <div className="title" style={{ marginBottom: 2 }}>
             SpecVLM Streaming Dashboard
           </div>
-          <div className="muted">WebSocket stream of tokens + speculative decoding telemetry (acceptance rate, TPS).</div>
+          <div className="muted">SSE stream of tokens + speculative decoding telemetry (acceptance rate, TPS).</div>
         </div>
         <div className="row">
           <button className="btn secondary" onClick={stop} disabled={status !== "streaming"}>
@@ -146,7 +163,7 @@ export default function Page() {
                 {latest ? `${latest.accepted_draft_tokens}/${latest.proposed_draft_tokens}` : "—"}
               </div>
             </div>
-            <div className="muted">Backend: `ws://localhost:8000/ws/generate`</div>
+            <div className="muted">Backend: SSE /api/generate/stream</div>
           </div>
 
           <div style={{ height: 320, marginTop: 10 }}>
@@ -186,4 +203,3 @@ export default function Page() {
     </main>
   );
 }
-
